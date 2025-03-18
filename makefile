@@ -1,5 +1,5 @@
 exec = fpp.out
-sources = $(wildcard D:/projects/fpp/*.c)
+sources = $(wildcard D:/projects/Fpp2/*.c)
 objects = $(sources:.c=.o)
 flags = -g
 
@@ -17,4 +17,3 @@ install:
 clean:
 	-rm *.out
 	-rm *.o
-	-rm D:/projects/fpp/*.o

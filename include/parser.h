@@ -34,5 +34,9 @@ AST_T* parser_parse_variable(parser_T* parser);
 
 AST_T* parser_parse_string(parser_T* parser);
 
+AST_T* parser_parse_number(parser_T* parser);
+
+AST_T* parser_parse_boolean(parser_T* parser);
+
 AST_T* parser_parse_id(parser_T* parser);
 #endif

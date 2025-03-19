@@ -26,5 +26,14 @@ AST_T* init_ast(int type) {
     ast->compound_value = (void*) 0;
     ast->compound_size = 0;
 
+
+    /* число */
+
+    ast->number_value = 0;
+
+    /* булеве значення */
+
+    ast->bool_value = 0;
+
     return ast;
 }

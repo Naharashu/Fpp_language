@@ -27,38 +27,50 @@ void lexer_skip_whitespace(lexer_T* lexer) {
 }
 
 token_T* lexer_get_next_token(lexer_T* lexer) {
-	while (lexer->c != '\0' && lexer->i < strlen(lexer->contents)) {
-		if (lexer->c == ' ' || lexer->c == 10) {
-			lexer_skip_whitespace(lexer);
-		}
+    while (lexer->c != '\0' && lexer->i < strlen(lexer->contents)) {
+        if (lexer->c == ' ' || lexer->c == 10) {
+            lexer_skip_whitespace(lexer);
+        }
 
-		if (isalnum(lexer->c)) {
-			return lexer_collect_id(lexer);
-		}
+        if (isalnum(lexer->c)) {
+            return lexer_collect_id(lexer);
+        }
 
-		if (isdigit(lexer->c)) {
-			return lexer_collect_int(lexer);
-		}
-		if (lexer->c == '"') {
-			return lexer_collect_string(lexer);
-		}
+        if (isdigit(lexer->c)) {
+            return lexer_collect_int(lexer);
+        }
+        if (lexer->c == '"') {
+            return lexer_collect_string(lexer);
+        }
 
-		if (lexer->c == 'true' || lexer->c == 'false') {
-			return lexer_collect_bool(lexer);
-		}
+        char* start = lexer->contents + lexer->i;
+        if (strncmp(start, "true", 4) == 0 && !isalnum(start[4])) {
+            lexer->i += 4;
+            lexer->c = lexer->contents[lexer->i];
+            return init_token(TOKEN_BOOL, strdup("true"));
+        }
+        if (strncmp(start, "false", 5) == 0 && !isalnum(start[5])) {
+            lexer->i += 5;
+            lexer->c = lexer->contents[lexer->i];
+            return init_token(TOKEN_BOOL, strdup("false"));
+        }
 
-		switch (lexer->c) {
-			case '=': return lexer_advance_with_token(lexer, init_token(TOKEN_EQUALS, lexer_get_current_char_as_string(lexer))); break;
-			case ';': return lexer_advance_with_token(lexer, init_token(TOKEN_SEMI, lexer_get_current_char_as_string(lexer))); break;
-			case '(': return lexer_advance_with_token(lexer, init_token(TOKEN_LPAREN, lexer_get_current_char_as_string(lexer))); break;
-			case ')': return lexer_advance_with_token(lexer, init_token(TOKEN_RPAREN, lexer_get_current_char_as_string(lexer))); break;
-			case ',': return lexer_advance_with_token(lexer, init_token(TOKEN_COMMA, lexer_get_current_char_as_string(lexer))); break;
-			case '{': return lexer_advance_with_token(lexer, init_token(TOKEN_LBRACE, lexer_get_current_char_as_string(lexer))); break;
-			case '}': return lexer_advance_with_token(lexer, init_token(TOKEN_RBRACE, lexer_get_current_char_as_string(lexer))); break;
-		}
-	}
+        switch (lexer->c) {
+            case '=': return lexer_advance_with_token(lexer, init_token(TOKEN_EQUALS, lexer_get_current_char_as_string(lexer))); break;
+			case '+': return lexer_advance_with_token(lexer, init_token(TOKEN_PLUS, lexer_get_current_char_as_string(lexer))); break;
+			case '-': return lexer_advance_with_token(lexer, init_token(TOKEN_MINUS, lexer_get_current_char_as_string(lexer))); break;
+			case '*': return lexer_advance_with_token(lexer, init_token(TOKEN_MUL, lexer_get_current_char_as_string(lexer))); break;
+			case '/': return lexer_advance_with_token(lexer, init_token(TOKEN_DIV, lexer_get_current_char_as_string(lexer))); break;
+            case ';': return lexer_advance_with_token(lexer, init_token(TOKEN_SEMI, lexer_get_current_char_as_string(lexer))); break;
+            case '(': return lexer_advance_with_token(lexer, init_token(TOKEN_LPAREN, lexer_get_current_char_as_string(lexer))); break;
+            case ')': return lexer_advance_with_token(lexer, init_token(TOKEN_RPAREN, lexer_get_current_char_as_string(lexer))); break;
+            case ',': return lexer_advance_with_token(lexer, init_token(TOKEN_COMMA, lexer_get_current_char_as_string(lexer))); break;
+            case '{': return lexer_advance_with_token(lexer, init_token(TOKEN_LBRACE, lexer_get_current_char_as_string(lexer))); break;
+            case '}': return lexer_advance_with_token(lexer, init_token(TOKEN_RBRACE, lexer_get_current_char_as_string(lexer))); break;
+        }
+    }
 
-	return init_token(TOKEN_EOF, "\0");
+    return init_token(TOKEN_EOF, "\0");
 }
 
 token_T* lexer_collect_string(lexer_T* lexer) {
@@ -82,24 +94,23 @@ token_T* lexer_collect_string(lexer_T* lexer) {
 }
 
 token_T* lexer_collect_id(lexer_T* lexer) {
+    char* value = calloc(1, sizeof(char));
+    value[0] = '\0';
 
+    while (isalnum(lexer->c)) {
+        char* s = lexer_get_current_char_as_string(lexer);
+        value = realloc(value, (strlen(value) + strlen(s) + 1) * sizeof(char));
+        strcat(value, s);
+        free(s);
+        lexer_advance(lexer);
+    }
 
-	char* value = calloc(1, sizeof(char));
-	value[0] = '\0';
+    if (strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
+        return init_token(TOKEN_BOOL, value);
+    }
 
-	while (isalnum(lexer->c) )
-	{
-		char* s = lexer_get_current_char_as_string(lexer);
-		value = realloc(value, (strlen(value) + strlen(s) + 1) * sizeof(char));
-		strcat(value, s);
-
-		lexer_advance(lexer);
-	}
-	
-
-	return init_token(TOKEN_ID, value);
+    return init_token(TOKEN_ID, value);
 }
-
 
 token_T* lexer_collect_int(lexer_T* lexer) {
 	char* value = calloc(1, sizeof(char));

@@ -143,11 +143,7 @@ def getVar(varname):
 
 def parse(toks): 
     i = 0
-    while(i < len(toks)):
-        if toks[i] == "WRITE":
-            doPRINT(toks[i+1])
-            i += 2
-        
+    while(i < len(toks)): 
         if toks[i] + " " + toks[i+1][0:6] == "WRITE STRING" or toks[i] + " " + toks[i+1][0:3] == "WRITE NUM" or toks[i] + " " + toks[i+1][0:3] == "WRITE EXPR" or toks[i] + " " + toks[i+1] == "WRITE VAR":
             if toks[i+1][0:6] == "STRING":
                 doPRINT(toks[i+1])

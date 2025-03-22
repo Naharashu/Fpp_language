@@ -9,6 +9,7 @@ tokens = []
 num_stack = []
 symbols = {}
 
+
 def lex(filecontents):
     tok = ""
     state = 0
@@ -98,7 +99,7 @@ def lex(filecontents):
             string += tok
             tok = ""
     
-    print("Tokens:", tokens)
+    #print("Tokens:", tokens)
     #return ''
     return tokens
 
@@ -120,19 +121,10 @@ def doPRINT(toPrint):
         print("Unknown type: " + toPrint)
     print(toPrint)
 
-    print("doPRINT called with:", toPrint)
 
 def doAssign(varname, varvalue):
-    if varvalue[0:6] == "STRING":
-        symbols[varname[4:]] = varvalue[7:]
-    elif varvalue[0:3] == "NUM":
-        symbols[varname[4:]] = int(varvalue[4:])
-    elif varvalue[0:4] == "EXPR":
-        symbols[varname[4:]] = evalExpression(varvalue[5:])
-    else:
-        print(f"Invalid assignment to {varname}: {varvalue}")
+    symbols[varname[4:]] = varvalue
 
-    print(f"Assigning {varvalue} to {varname}")
 
 def getVar(varname):
     varname = varname[4:]
@@ -141,17 +133,20 @@ def getVar(varname):
     else:
         return "Undeclared Variable Error!"
 
+
+
 def parse(toks): 
     i = 0
-    while(i < len(toks)): 
-        if toks[i] + " " + toks[i+1][0:6] == "WRITE STRING" or toks[i] + " " + toks[i+1][0:3] == "WRITE NUM" or toks[i] + " " + toks[i+1][0:3] == "WRITE EXPR" or toks[i] + " " + toks[i+1] == "WRITE VAR":
+    while(i < len(toks)):
+        if i + 1 < len(toks) and toks[i] + " " + toks[i+1][0:6] == "WRITE STRING" or toks[i] + " " + toks[i+1][0:3] == "WRITE NUM" or toks[i] + " " + toks[i+1][0:3] == "WRITE EXPR" or toks[i] + " " + toks[i+1] == "WRITE VAR":
+
             if toks[i+1][0:6] == "STRING":
                 doPRINT(toks[i+1])
             elif toks[i+1][0:3] == "NUM":
                 doPRINT(toks[i+1])
             elif toks[i+1][0:4] == "EXPR":
                 doPRINT(toks[i+1])
-            elif toks[i+1][0:4] == "VAR":
+            elif toks[i+1][0:3] == "VAR":
                 doPRINT(getVar(toks[i+1]))
             i += 2
 
@@ -162,9 +157,8 @@ def parse(toks):
             elif toks[i+2][0:3] == "NUM":
                 doAssign(toks[i], toks[i+2])
             elif toks[i+2][0:4] == "EXPR":
-                doAssign(toks[i], evalExpression(toks[i+2][5:]))
+                doAssign(toks[i],"NUM:" + str(evalExpression(toks[i+2][5:])))
             i += 3
-    print("Parsing tokens:", toks)
 
     #print(symbols)
 
@@ -173,6 +167,5 @@ def run():
     data = open_file(argv[1])
     toks = lex(data)
     parse(toks)
-    print("Parsing token:", toks)
 
 run()

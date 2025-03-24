@@ -4,21 +4,19 @@ import os
 aaaaan = 0
 while True:
     while aaaaan < 1:
-        print("Welcome to Quantum. Its ide for F++. Current version is 0.2.0")
+        print("Welcome to Quantum. Its ide for F++. Current version is 0.2.1")
         print("Type 'exit' to exit and 'help' to see commands")
         aaaaan += 1
     text = input("Quantum > ")
     if text == "exit":
         confirm = input("Are you sure you want to exit? (yes/no): ")
-        if confirm.lower() == "yes" or confirm.lower() == "y":
+        if confirm.lower() == "yes" or confirm.lower() == "y" or confirm.lower() == "yeah":
             break
         else:
             continue
     elif text == "release notes":
-        print("Current version is 0.2.0 (Release-23032025)")
-        print("- Added 'release notes' command")
-        print("- Added 'help' command")
-        print("- Upgraded 'exit' command")
+        print("Current version is 0.2.1 (Release-24032025)")
+        print("- Some small changes")
         continue
     elif text == "help":
         print("Type 'exit' to exit")
@@ -29,4 +27,4 @@ while True:
     result, error = fpp.run('<stdin>' ,text)
 
     if error: print(error.as_string())
-    else: print(result)
+    elif result: print(result)

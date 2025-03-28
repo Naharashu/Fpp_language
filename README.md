@@ -4,7 +4,7 @@
 
 ![Fpp Language logo](https://i.imgur.com/S2Z0d1t.png)
 
-F++ is new language what have syntax from JavaScript, C and Python. Latest version is 0.2.0 beta!
+F++ is new language what have syntax from JavaScript, C and Python. Latest version is 1.0.0 beta!
 
 
 
@@ -12,7 +12,7 @@ F++ is new language what have syntax from JavaScript, C and Python. Latest versi
 
 1. Clone repository 
 
-```bash 
+```shell 
 git clone https://github.com/Naharashu/Fpp_language
 ```
 

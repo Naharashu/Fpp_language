@@ -155,7 +155,8 @@ KEYWORDS = [
     'const',
     'int',
     'str',
-    'bool'
+    'bool',
+    'arr'
 ]
 
 
@@ -657,7 +658,7 @@ class Parser:
             self.advance()
             
             var_type = None
-            if self.current_tok.matches(TT_KEYWORD, 'int') or self.current_tok.matches(TT_KEYWORD, 'str') or self.current_tok.matches(TT_KEYWORD, 'bool'):
+            if self.current_tok.matches(TT_KEYWORD, 'int') or self.current_tok.matches(TT_KEYWORD, 'str') or self.current_tok.matches(TT_KEYWORD, 'bool') or self.current_tok.matches(TT_KEYWORD, 'arr'):
                 var_type = self.current_tok.value
                 res.register_advancement()
                 self.advance()
@@ -2176,6 +2177,8 @@ class BuiltInFunction(BaseFunction):
         return RTResult().success(Number(random.randint(int(a.value), int(b.value))))
     execute_random_num.arg_names = ['a', 'b']
     
+
+    
 BuiltInFunction.write       = BuiltInFunction("write")
 BuiltInFunction.return_     = BuiltInFunction("return_")
 BuiltInFunction.tostr       = BuiltInFunction("tostr")
@@ -2368,6 +2371,11 @@ class Interpreter:
                         f"Expected boolean for variable '{var_name}'",
                         context
                     ))
+            elif node.var_type == 'arr':
+                if isinstance(value, List):
+                    pass
+                else:
+                    return res.failure(RTError(node.pos_start, node.pos_end, f"Expected array for variable", context))
 
         if node.is_const:
             success = context.symbol_table.set_constant(var_name, value)

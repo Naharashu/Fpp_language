@@ -10,6 +10,12 @@ import math
 
 import sys
 
+import random
+
+import time
+
+import gc
+
 #######################################
 # CONSTANTS
 #######################################
@@ -145,7 +151,11 @@ KEYWORDS = [
     'remove',
     'with',
     'get',
-    'endf'
+    'endf',
+    'const',
+    'int',
+    'str',
+    'bool'
 ]
 
 
@@ -309,7 +319,7 @@ class Lexer:
         id_str = ''
         pos_start = self.pos.copy()
 
-        while self.current_char != None and self.current_char in LETTERS_DIGITS + '_':
+        while self.current_char != None and self.current_char in LETTERS_DIGITS + '_' + '.':
             id_str += self.current_char
             self.advance()
 
@@ -410,9 +420,11 @@ class VarAccessNode:
         self.pos_end = self.var_name_tok.pos_end
 
 class VarAssignNode:
-    def __init__(self, var_name_tok, value_node):
+    def __init__(self, var_name_tok, value_node, is_const=False, var_type=None):
         self.var_name_tok = var_name_tok
         self.value_node = value_node
+        self.is_const = is_const
+        self.var_type = var_type
 
         self.pos_start = self.var_name_tok.pos_start
         self.pos_end = self.value_node.pos_end
@@ -457,7 +469,7 @@ class ifNode:
 
     
 class forNode:
-    def __init__(self, var_name_tok, start_value_node, end_value_node, step_value_node, body_node, should_return_null):
+    def __init__(self, var_name_tok, start_value_node, end_value_node, step_value_node, body_node, should_return_null=False):
         self.var_name_tok = var_name_tok
         self.start_value_node = start_value_node
         self.end_value_node = end_value_node 
@@ -469,9 +481,10 @@ class forNode:
         self.pos_end = self.body_node.pos_end
 
 class whileNode:
-    def __init__(self, condition_node, body_node):
+    def __init__(self, condition_node, body_node, should_return_null=False):
         self.condition_node = condition_node
         self.body_node = body_node
+        self.should_return_null = should_return_null
 
         self.pos_start = self.condition_node.pos_start
         self.pos_end = self.body_node.pos_end
@@ -638,9 +651,16 @@ class Parser:
                 if res.error: return res
                 return res.success(if_expr)
 
-        if self.current_tok.matches(TT_KEYWORD, 'let'):
+        if self.current_tok.matches(TT_KEYWORD, 'let') or self.current_tok.matches(TT_KEYWORD, 'const'):
+            is_const = self.current_tok.matches(TT_KEYWORD, 'const')
             res.register_advancement()
             self.advance()
+            
+            var_type = None
+            if self.current_tok.matches(TT_KEYWORD, 'int') or self.current_tok.matches(TT_KEYWORD, 'str') or self.current_tok.matches(TT_KEYWORD, 'bool'):
+                var_type = self.current_tok.value
+                res.register_advancement()
+                self.advance()
 
             if self.current_tok.type != TT_IDENTIFIER:
                 return res.failure(InvalidSyntaxError(
@@ -663,14 +683,14 @@ class Parser:
             self.advance()
             expr = res.register(self.expr())
             if res.error: return res
-            return res.success(VarAssignNode(var_name, expr))
+            return res.success(VarAssignNode(var_name, expr, is_const, var_type))
 
         node = res.register(self.bin_op(self.comp_expr, ((TT_KEYWORD, 'and'), (TT_KEYWORD, 'or'))))
 
         if res.error:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
-                "Expected 'let', 'if', int, float, identifier, '+', '-', '(' or 'not'"
+                "Expected 'let', 'const','if', int, float, identifier, '+', '-', '(' or 'not'"
             ))
 
         return res.success(node)
@@ -864,7 +884,6 @@ class Parser:
             res.register_advancement()
             self.advance()
 
-            # Allow block style if the next token is '{' or NEWLINE
             if self.current_tok.type == TT_LBRACET or self.current_tok.type == TT_NEWLINE:
                 if self.current_tok.type == TT_LBRACET:
                     res.register_advancement()
@@ -875,7 +894,7 @@ class Parser:
                 statements = res.register(self.statements())
                 if res.error: 
                     return res
-                else_case = (statements, True)  # block style
+                else_case = (statements, True)  
                 if self.current_tok.type != TT_RBRACET:
                     return res.failure(InvalidSyntaxError(
                         self.current_tok.pos_start, self.current_tok.pos_end, "Expected '}'"
@@ -1177,7 +1196,6 @@ class Parser:
             node_to_return = res.register(self.expr())
             if res.error: return res
 
-
             return res.success(FuncDefNode(
                 var_name_tok,
                 arg_name_toks,
@@ -1191,18 +1209,52 @@ class Parser:
         
         res.register_advancement()
         self.advance()
+        
+        # Передача на багаторядковий варіант
+        if self.current_tok.type == TT_NEWLINE:
+            res.register_advancement()
+            self.advance()
             
-        if self.current_tok.type != TT_NEWLINE:
-            return res.failure(InvalidSyntaxError(
-                    self.current_tok.pos_start, self.current_tok.pos_end, f"Expected => or 'NEWLINE'"
+            # Парсимо тіло функції як блок операторів
+            body = res.register(self.statements())
+            if res.error: return res
+            
+            # Перевіряємо наявність закриваючої дужки
+            if self.current_tok.type != TT_RBRACET:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '}'"
                 ))
             
-        res.register_advancement()
-        self.advance()
-        node_to_return = res.register(self.expr())
-        if res.error: return res
-        
-        
+            res.register_advancement()
+            self.advance()
+            
+            # Повертаємо вузол функції
+            return res.success(FuncDefNode(
+                var_name_tok,
+                arg_name_toks,
+                body
+            ))
+        else:
+            # Однорядковий варіант
+            body = res.register(self.expr())
+            if res.error: return res
+            
+            if self.current_tok.type != TT_RBRACET:
+                return res.failure(InvalidSyntaxError(
+                    self.current_tok.pos_start, self.current_tok.pos_end,
+                    "Expected '}'"
+                ))
+            
+            res.register_advancement()
+            self.advance()
+            
+            return res.success(FuncDefNode(
+                var_name_tok,
+                arg_name_toks,
+                body
+            ))
+            
         
 
     def bin_op(self, func_a, ops, func_b=None):
@@ -1418,54 +1470,63 @@ class Number(Value):
 
     def get_comparison_eq(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value == other.value)).set_context(self.context), None
+            return Boolean(self.value == other.value).set_context(self.context), None
+        elif isinstance(other, Boolean):
+            return Boolean((1 if self.value else 0) == other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def get_comparison_ne(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value != other.value)).set_context(self.context), None
+            return Boolean(self.value != other.value).set_context(self.context), None
+        elif isinstance(other, Boolean):
+            return Boolean((1 if self.value else 0) != other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def get_comparison_lt(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value < other.value)).set_context(self.context), None
+            return Boolean(self.value < other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def get_comparison_gt(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value > other.value)).set_context(self.context), None
+            return Boolean(self.value > other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def get_comparison_lte(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value <= other.value)).set_context(self.context), None
+            return Boolean(self.value <= other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def get_comparison_gte(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value >= other.value)).set_context(self.context), None
+            return Boolean(self.value >= other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def anded_by(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value and other.value)).set_context(self.context), None
+            return Boolean(self.value != 0 and other.value != 0).set_context(self.context), None
+        elif isinstance(other, Boolean):
+            return Boolean(self.value != 0 and other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def ored_by(self, other):
         if isinstance(other, Number):
-            return Number(int(self.value or other.value)).set_context(self.context), None
+            return Boolean(self.value != 0 or other.value != 0).set_context(self.context), None
+        elif isinstance(other, Boolean):
+            return Boolean(self.value != 0 or other.value).set_context(self.context), None
         else:
             return None, Value.illegal_operation(self, other)
 
     def notted(self):
-        return Number(1 if self.value == 0 else 0).set_context(self.context), None
+        return Boolean(self.value == 0).set_context(self.context), None
+
     
     def __lt__(self, other):
         if isinstance(other, Number):
@@ -1535,6 +1596,72 @@ class String(Value):
     def __repr__(self):
         return f'"{self.value}"'
     
+    
+class Boolean(Value):
+    def __init__(self, value):
+        super().__init__()
+        self.value = 1 if value else 0
+        
+    def added_to(self, other):
+        return None, Value.illegal_operation(self, other)
+
+    def subbed_by(self, other):
+        return None, Value.illegal_operation(self, other)
+
+    def multed_by(self, other):
+        return None, Value.illegal_operation(self, other)
+
+    def dived_by(self, other):
+        return None, Value.illegal_operation(self, other)
+    
+    def powed_by(self, other):
+        return None, Value.illegal_operation(self, other)
+
+    def get_comparison_eq(self, other):
+        if isinstance(other, Boolean):
+            return Boolean(self.value == other.value).set_context(self.context), None
+        elif isinstance(other, Number):
+            return Boolean(self.value == (1 if other.value else 0)).set_context(self.context), None
+        return None, Value.illegal_operation(self, other)
+    
+    def get_comparison_ne(self, other):
+        if isinstance(other, Boolean):
+            return Boolean(self.value != other.value).set_context(self.context), None
+        elif isinstance(other, Number):
+            return Boolean(self.value != (1 if other.value else 0)).set_context(self.context), None
+        return None, Value.illegal_operation(self, other)
+
+    def anded_by(self, other):
+        if isinstance(other, Boolean):
+            return Boolean(self.value and other.value).set_context(self.context), None
+        elif isinstance(other, Number):
+            return Boolean(self.value and other.value != 0).set_context(self.context), None
+        return None, Value.illegal_operation(self, other)
+
+    def ored_by(self, other):
+        if isinstance(other, Boolean):
+            return Boolean(self.value or other.value).set_context(self.context), None
+        elif isinstance(other, Number):
+            return Boolean(self.value or other.value != 0).set_context(self.context), None
+        return None, Value.illegal_operation(self, other)
+
+    def notted(self):
+        return Boolean(not self.value).set_context(self.context), None
+
+    def copy(self):
+        copy = Boolean(self.value)
+        copy.set_pos(self.pos_start, self.pos_end)
+        copy.set_context(self.context)
+        return copy
+
+    def is_true(self):
+        return self.value == 1
+
+    def __repr__(self):
+        return "true" if self.value else "false"
+    
+Boolean.true = Boolean(True)
+Boolean.false = Boolean(False)
     
 class BaseFunction(Value):
     
@@ -1738,17 +1865,17 @@ class BuiltInFunction(BaseFunction):
     
     def execute_is_num(self, exec_ctx):
         is_num = isinstance(exec_ctx.symbol_table.get("value"), Number)
-        return RTResult().success(Number.true if is_num else Number.false)  
+        return RTResult().success(Boolean(is_num))
     execute_is_num.arg_names = ['value']
-    
+
     def execute_is_str(self, exec_ctx):
-        is_num = isinstance(exec_ctx.symbol_table.get("value"), String)
-        return RTResult().success(Number.true if is_num else Number.false)  
+        is_str = isinstance(exec_ctx.symbol_table.get("value"), String)
+        return RTResult().success(Boolean(is_str))
     execute_is_str.arg_names = ['value']
-    
+
     def execute_is_array(self, exec_ctx):
-        is_num = isinstance(exec_ctx.symbol_table.get("value"), List)
-        return RTResult().success(Number.true if is_num else Number.false)  
+        is_array = isinstance(exec_ctx.symbol_table.get("value"), List)
+        return RTResult().success(Boolean(is_array))
     execute_is_array.arg_names = ['value']
     
     def execute_append(self, exec_ctx):
@@ -1983,15 +2110,11 @@ class BuiltInFunction(BaseFunction):
         value = exec_ctx.symbol_table.get("value")
         value_ = "undefined"
         if isinstance(value, Number):
-            if value.value in (Number.true.value, Number.false.value):
-                if value.value == 1 or 0:
-                    value_ = "int"
-                else:
-                    value_ = "bool"
-            else:
-                value_ = "int"
+            value_ = "int"
         elif isinstance(value, String):
             value_ = "string"
+        elif isinstance(value, Boolean):
+            value_ = "bool"
         elif isinstance(value, List):
             value_ = "array"
         elif isinstance(value, Function):
@@ -2016,6 +2139,43 @@ class BuiltInFunction(BaseFunction):
             
     execute_sort.arg_names = ['list_']
     
+    def execute_sleep(self, exec_ctx):
+        sec = exec_ctx.symbol_table.get("sec")
+        
+        if not isinstance(sec , Number):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Argument must be number (sleep works with seconds)",
+                exec_ctx
+            ))
+        time.sleep(sec.value)
+        return RTResult().success(Number.null)
+    execute_sleep.arg_names = ['sec']
+    
+    def execute_random(self, exec_ctx):
+        return RTResult().success(Number(random.random()))
+    execute_random.arg_names = []
+    
+    def execute_random_num(self, exec_ctx):
+        a = exec_ctx.symbol_table.get("a")
+        b = exec_ctx.symbol_table.get("b")
+        
+        if not isinstance(a , Number):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "First argument must be a num",
+                exec_ctx
+            ))
+            
+        if not isinstance(b , Number):
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Second argument must be a num",
+                exec_ctx
+            ))
+        return RTResult().success(Number(random.randint(int(a.value), int(b.value))))
+    execute_random_num.arg_names = ['a', 'b']
+    
 BuiltInFunction.write       = BuiltInFunction("write")
 BuiltInFunction.return_     = BuiltInFunction("return_")
 BuiltInFunction.tostr       = BuiltInFunction("tostr")
@@ -2038,6 +2198,9 @@ BuiltInFunction.round       = BuiltInFunction("round")
 BuiltInFunction.sum         = BuiltInFunction("sum")
 BuiltInFunction.type        = BuiltInFunction("type")
 BuiltInFunction.sort        = BuiltInFunction("sort")
+BuiltInFunction.random      = BuiltInFunction("random")
+BuiltInFunction.sleep       = BuiltInFunction("sleep")
+BuiltInFunction.random_num  = BuiltInFunction("random_num")
 
     
 #######################################
@@ -2058,6 +2221,8 @@ class Context:
 class SymbolTable:
     def __init__(self, parent=None):
         self.symbols = {}
+        self.constants = set()
+        self.var_types = {}
         self.parent = parent
 
     def get(self, name):
@@ -2066,10 +2231,57 @@ class SymbolTable:
             return self.parent.get(name)
         return value
 
-    def set(self, name, value):
+    def set(self, name, value, var_type=None):
+        if name in self.constants:
+            return False
+        
+        parent = self.parent
+        while parent:
+            if hasattr(parent, 'const') and name in parent.constants:
+                return False
+            parent = parent.parent
+        
         self.symbols[name] = value
+        if var_type:
+            self.var_types[name] = var_type
+        return True
+    
+    def set_constant(self, name, value, var_type=None):
+        if name in self.symbols:
+            return False
+            
+        self.symbols[name] = value
+        self.constants.add(name)
+        if var_type:
+            self.var_types[name] = var_type
+        return True
+    
+    def is_constant(self, name):
+        if name in self.constants:
+            return True
+        
+        parent = self.parent
+        while parent:
+            if hasattr(parent, 'const') and name in parent.constants:
+                return True
+            parent = parent.parent
+
+        return False
+    
+    def get_type(self, name):
+        if name in self.var_types:
+            return self.var_types[name]
+        parent = self.parent
+        while parent:
+            if hasattr(parent, 'var_types') and name in parent.var_types:
+                return parent.var_types[name]
+            parent = parent.parent
+            
+        return None
 
     def remove(self, name):
+        if name in self.constants:
+            self.constants.remove(name)
         del self.symbols[name]
 
 #######################################
@@ -2130,7 +2342,49 @@ class Interpreter:
         value = res.register(self.visit(node.value_node, context))
         if res.error: return res
 
-        context.symbol_table.set(var_name, value)
+        if node.var_type:
+            if node.var_type == 'int':
+                if not isinstance(value, Number) or isinstance(value.value, float):
+                    return res.failure(RTError(
+                        node.pos_start, node.pos_end,
+                        f"Expected integer for variable '{var_name}'",
+                        context
+                    ))
+            elif node.var_type == 'str':
+                if not isinstance(value, String):
+                    return res.failure(RTError(
+                        node.pos_start, node.pos_end,
+                        f"Expected string for variable '{var_name}'",
+                        context
+                    ))
+            elif node.var_type == 'bool':
+                if isinstance(value, Boolean):
+                    pass
+                elif not isinstance(value, Number) and value.value not in (0, 1):
+                    value = Boolean(value.value == 1)
+                else:
+                    return res.failure(RTError(
+                        node.pos_start, node.pos_end,
+                        f"Expected boolean for variable '{var_name}'",
+                        context
+                    ))
+
+        if node.is_const:
+            success = context.symbol_table.set_constant(var_name, value)
+            if not success:
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Cannot change value of constant '{var_name}'",
+                    context
+                ))
+        else:
+            if context.symbol_table.is_constant(var_name):
+                return res.failure(RTError(
+                    node.pos_start, node.pos_end,
+                    f"Cannot change value of constant '{var_name}'",
+                    context
+                ))
+            context.symbol_table.set(var_name, value, node.var_type)
         return res.success(value)
 
     def visit_BinOpNode(self, node, context):
@@ -2306,6 +2560,31 @@ class Interpreter:
             return_value =Number.null
         return_value = return_value.copy().set_pos(node.pos_start, node.pos_end).set_context(context)
         return res.success(return_value)
+    
+    def visit_whileNode(self, node, context):
+        res = RTResult()
+        elements = []
+
+        while True:
+            condition = res.register(self.visit(node.condition_node, context))
+            if res.error: return res
+            
+            if not condition.is_true(): break
+            
+            value = res.register(self.visit(node.body_node, context))
+            if res.error: return res
+            
+            if isinstance(value, List) and isinstance(node.body_node, ListNode):
+                for item in value.elements:
+                    elements.append(item)
+            else:
+                elements.append(value)
+        
+        return res.success(
+            Number.null if node.should_return_null else
+            List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
+        )
+
 
 #######################################
 # RUN
@@ -2313,8 +2592,8 @@ class Interpreter:
 
 global_symbol_table = SymbolTable()
 global_symbol_table.set("null", Number(0))
-global_symbol_table.set("true", Number(1))
-global_symbol_table.set("false", Number(0))
+global_symbol_table.set("true", Boolean.true)
+global_symbol_table.set("false", Boolean.false)
 global_symbol_table.set("pi", Number.PI)
 global_symbol_table.set("e", Number.E)
 global_symbol_table.set("write", BuiltInFunction.write)
@@ -2339,6 +2618,9 @@ global_symbol_table.set("round", BuiltInFunction.round)
 global_symbol_table.set("sum", BuiltInFunction.sum)
 global_symbol_table.set("type", BuiltInFunction.type)
 global_symbol_table.set("sort", BuiltInFunction.sort)
+global_symbol_table.set("random", BuiltInFunction.random)
+global_symbol_table.set("random.num", BuiltInFunction.random_num)
+global_symbol_table.set("sleep", BuiltInFunction.sleep)
 
 def run(fn, text):
     # Generate tokens
@@ -2356,5 +2638,7 @@ def run(fn, text):
     context = Context('<code>')
     context.symbol_table = global_symbol_table
     result = interpreter.visit(ast.node, context)
+    gc.enable()
+    gc.collect()
 
     return result.value, result.error

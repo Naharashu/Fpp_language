@@ -127,8 +127,8 @@ while True:
                 continue
         
             continue
-
-    result, error = fpp.run('<stdin>' ,text)
+    context = fpp.Context('<code>')
+    result, error = fpp.run('<stdin>' ,text, context)
 
 
     if error: print(error.as_string())

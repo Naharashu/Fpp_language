@@ -1,3 +1,3 @@
 Python - 3.13.2
-Quantum IDE - 0.2.1 BETA
-F++ - 0.2.0 Beta
+Quantum IDE - 1.0.0 BETA
+F++ - 1.2.0 Beta

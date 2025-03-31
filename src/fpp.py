@@ -1621,6 +1621,11 @@ class Number(Value):
         copy.set_pos(self.pos_start, self.pos_end)
         copy.set_context(self.context)
         return copy
+    
+    def __eq__(self, other):
+        if isinstance(other, Number):
+            return self.value == other.value
+        return False
 
     def is_true(self):
         return self.value != 0
@@ -1668,6 +1673,11 @@ class String(Value):
         
     def is_true(self):
         return len(self.value) > 0
+    
+    def __eq__(self, other):
+        if isinstance(other, String):
+            return self.value == other.value
+        return False
     
     def copy(self):
         copy = String(self.value)
@@ -1904,17 +1914,6 @@ class BuiltInFunction(BaseFunction):
         return_value = res.register(method(exec_ctx))
         if res.error: return res
         return res.success(return_value)
-    def execute_python_function(self, exec_ctx, args):
-        try:
-            py_function = global_import_system.modules[self.name.split('.')[0]].symbol_table.get(self.name.split('.')[-1])
-            result = py_function(*[arg.value for arg in args])
-            return RTResult().success(Number(result) if isinstance(result, (int, float)) else String(str(result)))
-        except Exception as e:
-            return RTResult().failure(RTError(
-                self.pos_start, self.pos_end,
-                f"Error executing module function '{self.name}': {str(e)}",
-                exec_ctx
-            ))
     
     def no_visit_method(self, node, context):
         raise Exception(f'No execute_{self.name} method defined')
@@ -2351,6 +2350,85 @@ class BuiltInFunction(BaseFunction):
 
     execute_swap.arg_names = ['value1', 'value2']
     
+    
+    def execute_comp(self, exec_ctx):
+        value1 = exec_ctx.symbol_table.get("value1")
+        value2 = exec_ctx.symbol_table.get("value2")
+        
+        if value1 is None:
+                return RTResult().failure(RTError(
+                    self.pos_start, self.pos_end,
+                    "Argument 'value' is missing",
+                    exec_ctx
+                ))
+                
+        if value2 is None:
+                return RTResult().failure(RTError(
+                    self.pos_start, self.pos_end,
+                    "Argument 'value' is missing",
+                    exec_ctx
+                ))
+        
+        if value1 == value2:
+            return RTResult().success(Boolean(True))
+        else:
+            return RTResult().success(Boolean(False))
+        
+    execute_comp.arg_names = ['value1', 'value2']
+    
+    def execute_gc_clean(self, exec_ctx):
+        gc.collect()
+        return RTResult().success(Number.null)
+    execute_gc_clean.arg_names = []
+    
+    def execute_gc_count(self, exec_ctx):
+        return RTResult().success(Number(gc.collect()))
+    execute_gc_count.arg_names = []
+    
+    def execute_del_(self, exec_ctx):
+        value = exec_ctx.symbol_table.get('value')
+    
+        if isinstance(value, String) or isinstance(value, Number):
+            var_name = exec_ctx.symbol_table.get_variable_name(value)
+        else:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Argument must be a variable",
+                exec_ctx
+            ))
+        
+        if var_name is None:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                "Could not determine variable name",
+                exec_ctx
+            ))
+        
+        if exec_ctx.symbol_table.remove(var_name):
+            return RTResult().success(String(f"deleted {var_name}"))
+        else:
+            return RTResult().failure(RTError(
+                self.pos_start, self.pos_end,
+                f"Variable '{var_name}' not found",
+                exec_ctx
+            ))
+
+    execute_del_.arg_names = ['value']
+    
+    def execute_os_name(self, exec_ctx):
+        return RTResult().success(String(os.name))
+    execute_os_name.arg_names = []
+    
+    def execute_memory(self, exec_ctx):
+        memory_state = exec_ctx.symbol_table.get_memory_state()
+        result = "Current memory state:\n"
+        for var_name, value in memory_state.items():
+            result += f"{var_name}: {value}\n"
+        return RTResult().success(String(result))
+
+    execute_memory.arg_names = []
+            
+    
 BuiltInFunction.write       = BuiltInFunction("write")
 BuiltInFunction.return_     = BuiltInFunction("return_")
 BuiltInFunction.tostr       = BuiltInFunction("tostr")
@@ -2380,7 +2458,12 @@ BuiltInFunction.now         = BuiltInFunction("now")
 BuiltInFunction.id          = BuiltInFunction("id")
 BuiltInFunction.split       = BuiltInFunction("split")
 BuiltInFunction.swap        = BuiltInFunction("swap")
-
+BuiltInFunction.comp        = BuiltInFunction("comp")
+BuiltInFunction.gc_clean    = BuiltInFunction("gc_clean")
+BuiltInFunction.gc_count    = BuiltInFunction("gc_count")
+BuiltInFunction.del_        = BuiltInFunction("del_")
+BuiltInFunction.os_name     = BuiltInFunction("os_name")
+BuiltInFunction.memory      = BuiltInFunction("memory")
 
     
 #######################################
@@ -2407,7 +2490,7 @@ class SymbolTable:
 
     def get_variable_name(self, value):
         for name, val in self.symbols.items():
-            if val is value:
+            if val == value:
                 return name
         if self.parent:
             return self.parent.get_variable_name(value)
@@ -2456,6 +2539,16 @@ class SymbolTable:
 
         return False
     
+    def get_memory_state(self):
+        memory_state = {}
+        current = self
+        while current:
+            for name, value in current.symbols.items():
+                if name not in memory_state:
+                    memory_state[name] = value
+            current = current.parent
+        return memory_state
+    
     def get_type(self, name):
         if name in self.var_types:
             return self.var_types[name]
@@ -2468,9 +2561,12 @@ class SymbolTable:
         return None
 
     def remove(self, name):
-        if name in self.constants:
-            self.constants.remove(name)
-        del self.symbols[name]
+        if name in self.symbols:
+            del self.symbols[name]
+            return True
+        elif self.parent:
+            return self.parent.remove(name)
+        return False
         
         
 #######################################
@@ -2810,7 +2906,7 @@ class Interpreter:
     def visit_FuncDefNode(self, node, context):
         res = RTResult()
 
-        func_name = node.var_name_tok.value if node.var_name_tok else None
+        func_name = node.var_name_tok.value if node.var_name_tok else '<lambda>'
         body_node = node.body_node
         arg_names = [arg_name.value for arg_name in node.arg_names_toks]
         func_value = Function(func_name, body_node, arg_names).set_context(context).set_pos(node.pos_start, node.pos_end)
@@ -2947,6 +3043,12 @@ global_symbol_table.set("now", BuiltInFunction.now)
 global_symbol_table.set("id", BuiltInFunction.id)
 global_symbol_table.set("split", BuiltInFunction.split)
 global_symbol_table.set("swap", BuiltInFunction.swap)
+global_symbol_table.set("comp", BuiltInFunction.comp)
+global_symbol_table.set("gc.clean", BuiltInFunction.gc_clean)
+global_symbol_table.set("gc.count", BuiltInFunction.gc_count)
+global_symbol_table.set("del", BuiltInFunction.del_)
+global_symbol_table.set("os.name", BuiltInFunction.os_name)
+global_symbol_table.set("memory", BuiltInFunction.memory)
 
 def run(fn, text, context=None):
     if context is None:

@@ -37,15 +37,14 @@ def run_prompt():
                     continue
         if lang == "ukr":
             if text == "release notes":
-                print("Поточна версія - 1.0.0 (Release-27032025)")
-                print("- Додана українська локалізація")
-                print("- Додано команду 'clear'")
+                print("Поточна версія - 2.0.0 (Release-31032025)")
+                print("- підтримка компіляції інших файлів(альфа)")
                 continue
         else:
             if text == "release notes":
-                print("Current version is 1.0.0 (Release-27032025)")
-                print("- Added clear command")
-                print("- Added ukrainian localization")
+                print("Current version is 2.0.0 (Release-31032025)")
+                print("- Added support compiling other files(Alpha)")
+           
                 continue
         if lang == "ukr":
             if text == "help":
